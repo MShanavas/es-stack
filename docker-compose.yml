@@ -133,6 +133,7 @@ services:
       - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
       - xpack.security.transport.ssl.verification_mode=certificate
       - xpack.license.self_generated.type=${LICENSE}
+      - node.roles=master
     mem_limit: ${MEM_LIMIT}
     ulimits:
       memlock:
@@ -172,6 +173,7 @@ services:
       - xpack.security.transport.ssl.certificate=certs/esdatahot/esdatahot.crt
       - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
       - xpack.security.transport.ssl.verification_mode=certificate
+      - node.roles=data_hot
       - xpack.license.self_generated.type=${LICENSE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
@@ -212,6 +214,7 @@ services:
       - xpack.security.transport.ssl.certificate=certs/esdatawarm/esdatawarm.crt
       - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
       - xpack.security.transport.ssl.verification_mode=certificate
+      - node.roles=data_warm
       - xpack.license.self_generated.type=${LICENSE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
@@ -237,6 +240,7 @@ services:
       - escoordinate1_data:/usr/share/elasticsearch/data
       - escoordinate1_logs:/usr/share/elasticsearch/logs
     environment:
+      - node.roles=coordinate
       - node.name=escoordinate1
       - cluster.name=${CLUSTER_NAME}
       - cluster.initial_master_nodes=esmaster
@@ -274,9 +278,10 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
-      - eescoordinate2_logs:/usr/share/elasticsearch/logs
+      - escoordinate2_logs:/usr/share/elasticsearch/logs
       - escoordinate2_data:/usr/share/elasticsearch/data
     environment:
+      - node.roles=coordinate
       - node.name=escoordinate2
       - cluster.name=${CLUSTER_NAME}
       - cluster.initial_master_nodes=esmaster
@@ -314,9 +319,10 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
-      - eescoordinate3_logs:/usr/share/elasticsearch/logs
+      - escoordinate3_logs:/usr/share/elasticsearch/logs
       - escoordinate3_data:/usr/share/elasticsearch/data
     environment:
+      - node.roles=coordinate
       - node.name=escoordinate3
       - cluster.name=${CLUSTER_NAME}
       - cluster.initial_master_nodes=esmaster
@@ -350,19 +356,21 @@ services:
 
   esingest:
     depends_on:
-      - esingest
+      - escoordinate3
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
       - esingest_logs:/usr/share/elasticsearch/logs
       - esingest_data:/usr/share/elasticsearch/data
     environment:
+      - node.roles=ingest
       - node.name=esingest
       - cluster.name=${CLUSTER_NAME}
       - cluster.initial_master_nodes=esmaster
       - discovery.seed_hosts=esdatahot,esmaster,escoordinate1,escoordinate2,escoordinate3
       - bootstrap.memory_lock=true
       - xpack.security.enabled=true
+      - xpack.ingest.geoip.enabled=true      
       - xpack.security.http.ssl.enabled=true
       - xpack.security.http.ssl.key=certs/esingest/esingest.key
       - xpack.security.http.ssl.certificate=certs/esingest/esingest.crt
@@ -419,6 +427,19 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
+
+  esfleet:
+    depends_on:
+      - kibana
+    image: docker.elastic.co/beats/elastic-agent:${STACK_VERSION}
+    volumes:
+      - esfleet:/usr/share/elastic-agent/data    
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
 
 volumes:
   certs:
