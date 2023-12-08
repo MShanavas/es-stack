@@ -60,6 +60,18 @@ services:
           "      - localhost\n"\
           "    ip:\n"\
           "      - 127.0.0.1\n"\
+          "  - name: esremoteclusterclient\n"\
+          "    dns:\n"\
+          "      - esremoteclusterclient\n"\
+          "      - localhost\n"\
+          "    ip:\n"\
+          "      - 127.0.0.1\n"\
+          "  - name: esdatacontent\n"\
+          "    dns:\n"\
+          "      - esdatacontent\n"\
+          "      - localhost\n"\
+          "    ip:\n"\
+          "      - 127.0.0.1\n"\
           "  - name: esingest\n"\
           "    dns:\n"\
           "      - esingest\n"\
@@ -75,6 +87,12 @@ services:
           "  - name: kibana\n"\
           "    dns:\n"\
           "      - kibana\n"\
+          "      - localhost\n"\
+          "    ip:\n"\
+          "      - 127.0.0.1\n"\
+          "  - name: estransform\n"\
+          "    dns:\n"\
+          "      -estransform\n"\
           "      - localhost\n"\
           "    ip:\n"\
           "      - 127.0.0.1\n"\
@@ -119,7 +137,7 @@ services:
       - node.name=esmaster
       - cluster.name=${CLUSTER_NAME}
       - cluster.initial_master_nodes=esmaster
-      - discovery.seed_hosts=esdatahot,esdatawarm,escoordinate1,escoordinate2,escoordinate3,esingest
+      - discovery.seed_hosts=${DISCOVERY_SEED_HOSTS}
       - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
       - bootstrap.memory_lock=true
       - xpack.security.enabled=true
@@ -149,9 +167,52 @@ services:
       timeout: 10s
       retries: 120
 
+  esdatacontent:
+    depends_on:
+      esmaster:
+        condition: service_healthy
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - esdatacontent_data:/usr/share/elasticsearch/data
+      - esdatacontent_logs:/usr/share/elasticsearch/logs      
+    environment:
+      - node.name=esdatacontent
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=esmaster
+      - discovery.seed_hosts=${DISCOVERY_SEED_HOSTS}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/esdatacontent/esdatacontent.key
+      - xpack.security.http.ssl.certificate=certs/esdatacontent/esdatacontent.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.key=certs/esdatacontent/esdatacontent.key
+      - xpack.security.transport.ssl.certificate=certs/esdatacontent/esdatacontent.crt
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - node.roles=data_content
+      - xpack.license.self_generated.type=${LICENSE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
   esdatahot:
     depends_on:
-      - esmaster
+      esdatacontent:
+        condition: service_healthy
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
@@ -161,7 +222,7 @@ services:
       - node.name=esdatahot
       - cluster.name=${CLUSTER_NAME}
       - cluster.initial_master_nodes=esmaster
-      - discovery.seed_hosts=esdatawarm,esmaster,escoordinate1,escoordinate2,escoordinate3,esingest
+      - discovery.seed_hosts=${DISCOVERY_SEED_HOSTS}
       - bootstrap.memory_lock=true
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=true
@@ -190,9 +251,11 @@ services:
       timeout: 10s
       retries: 120
 
+
   esdatawarm:
     depends_on:
-      - esdatahot
+      esdatahot:
+        condition: service_healthy
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
@@ -202,7 +265,7 @@ services:
       - node.name=esdatawarm
       - cluster.name=${CLUSTER_NAME}
       - cluster.initial_master_nodes=esmaster
-      - discovery.seed_hosts=esdatahot,esmaster,escoordinate1,escoordinate2,escoordinate3,esingest
+      - discovery.seed_hosts=${DISCOVERY_SEED_HOSTS}
       - bootstrap.memory_lock=true
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=true
@@ -231,20 +294,147 @@ services:
       timeout: 10s
       retries: 120
 
+  estransform:
+    depends_on:
+      esdatawarm:
+        condition: service_healthy
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - estransform_logs:/usr/share/elasticsearch/logs
+      - estransform_data:/usr/share/elasticsearch/data
+    environment:
+      - node.roles=transform
+      - node.name=estransform
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=esmaster
+      - discovery.seed_hosts=${DISCOVERY_SEED_HOSTS}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true  
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/estransform/estransform.key
+      - xpack.security.http.ssl.certificate=certs/estransform/estransform.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.key=certs/estransform/estransform.key
+      - xpack.security.transport.ssl.certificate=certs/estransform/estransform.crt
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.license.self_generated.type=${LICENSE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
+  esingest:
+    depends_on:
+      estransform:
+        condition: service_healthy
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - esingest_logs:/usr/share/elasticsearch/logs
+      - esingest_data:/usr/share/elasticsearch/data
+    environment:
+      - node.roles=ingest
+      - node.name=esingest
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=esmaster
+      - discovery.seed_hosts=${DISCOVERY_SEED_HOSTS}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true  
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/esingest/esingest.key
+      - xpack.security.http.ssl.certificate=certs/esingest/esingest.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.key=certs/esingest/esingest.key
+      - xpack.security.transport.ssl.certificate=certs/esingest/esingest.crt
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.license.self_generated.type=${LICENSE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
+  esremoteclusterclient:
+    depends_on:
+      esingest:
+        condition: service_healthy
+    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
+    volumes:
+      - certs:/usr/share/elasticsearch/config/certs
+      - esremoteclusterclient_logs:/usr/share/elasticsearch/logs
+      - esremoteclusterclient_data:/usr/share/elasticsearch/data
+    environment:
+      - node.roles=remote_cluster_client
+      - node.name=esremoteclusterclient
+      - cluster.name=${CLUSTER_NAME}
+      - cluster.initial_master_nodes=esmaster
+      - discovery.seed_hosts=${DISCOVERY_SEED_HOSTS}
+      - bootstrap.memory_lock=true
+      - xpack.security.enabled=true  
+      - xpack.security.http.ssl.enabled=true
+      - xpack.security.http.ssl.key=certs/esremoteclusterclient/esremoteclusterclient.key
+      - xpack.security.http.ssl.certificate=certs/esremoteclusterclient/esremoteclusterclient.crt
+      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.enabled=true
+      - xpack.security.transport.ssl.key=certs/esremoteclusterclient/esremoteclusterclient.key
+      - xpack.security.transport.ssl.certificate=certs/esremoteclusterclient/esremoteclusterclient.crt
+      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
+      - xpack.security.transport.ssl.verification_mode=certificate
+      - xpack.license.self_generated.type=${LICENSE}
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
   escoordinate1:
     depends_on:
-      - esdatawarm
+      esremoteclusterclient:
+        condition: service_healthy
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
       - certs:/usr/share/elasticsearch/config/certs
       - escoordinate1_data:/usr/share/elasticsearch/data
       - escoordinate1_logs:/usr/share/elasticsearch/logs
     environment:
-      - node.roles=coordinate
+      - node.roles=[ ]
       - node.name=escoordinate1
       - cluster.name=${CLUSTER_NAME}
       - cluster.initial_master_nodes=esmaster
-      - discovery.seed_hosts=esdatahot,esmaster,escoordinate2,escoordinate3,esingest
+      - discovery.seed_hosts=${DISCOVERY_SEED_HOSTS}
       - bootstrap.memory_lock=true
       - xpack.security.enabled=true
       - xpack.security.http.ssl.enabled=true
@@ -272,129 +462,6 @@ services:
       timeout: 10s
       retries: 120
 
-  escoordinate2:
-    depends_on:
-      - escoordinate1
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
-    volumes:
-      - certs:/usr/share/elasticsearch/config/certs
-      - escoordinate2_logs:/usr/share/elasticsearch/logs
-      - escoordinate2_data:/usr/share/elasticsearch/data
-    environment:
-      - node.roles=coordinate
-      - node.name=escoordinate2
-      - cluster.name=${CLUSTER_NAME}
-      - cluster.initial_master_nodes=esmaster
-      - discovery.seed_hosts=esdatahot,esmaster,escoordinate2,escoordinate3,esingest
-      - bootstrap.memory_lock=true
-      - xpack.security.enabled=true
-      - xpack.security.http.ssl.enabled=true
-      - xpack.security.http.ssl.key=certs/escoordinate2/escoordinate2.key
-      - xpack.security.http.ssl.certificate=certs/escoordinate2/escoordinate2.crt
-      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
-      - xpack.security.transport.ssl.enabled=true
-      - xpack.security.transport.ssl.key=certs/escoordinate2/escoordinate2.key
-      - xpack.security.transport.ssl.certificate=certs/escoordinate2/escoordinate2.crt
-      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
-      - xpack.security.transport.ssl.verification_mode=certificate
-      - xpack.license.self_generated.type=${LICENSE}
-    mem_limit: ${MEM_LIMIT}
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 120
-
-  escoordinate3:
-    depends_on:
-      - escoordinate2
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
-    volumes:
-      - certs:/usr/share/elasticsearch/config/certs
-      - escoordinate3_logs:/usr/share/elasticsearch/logs
-      - escoordinate3_data:/usr/share/elasticsearch/data
-    environment:
-      - node.roles=coordinate
-      - node.name=escoordinate3
-      - cluster.name=${CLUSTER_NAME}
-      - cluster.initial_master_nodes=esmaster
-      - discovery.seed_hosts=esdatahot,esmaster,escoordinate3,escoordinate1,esingest
-      - bootstrap.memory_lock=true
-      - xpack.security.enabled=true
-      - xpack.security.http.ssl.enabled=true
-      - xpack.security.http.ssl.key=certs/escoordinate3/escoordinate3.key
-      - xpack.security.http.ssl.certificate=certs/escoordinate3/escoordinate3.crt
-      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
-      - xpack.security.transport.ssl.enabled=true
-      - xpack.security.transport.ssl.key=certs/escoordinate3/escoordinate3.key
-      - xpack.security.transport.ssl.certificate=certs/escoordinate3/escoordinate3.crt
-      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
-      - xpack.security.transport.ssl.verification_mode=certificate
-      - xpack.license.self_generated.type=${LICENSE}
-    mem_limit: ${MEM_LIMIT}
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 120
-
-  esingest:
-    depends_on:
-      - escoordinate3
-    image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
-    volumes:
-      - certs:/usr/share/elasticsearch/config/certs
-      - esingest_logs:/usr/share/elasticsearch/logs
-      - esingest_data:/usr/share/elasticsearch/data
-    environment:
-      - node.roles=ingest
-      - node.name=esingest
-      - cluster.name=${CLUSTER_NAME}
-      - cluster.initial_master_nodes=esmaster
-      - discovery.seed_hosts=esdatahot,esmaster,escoordinate1,escoordinate2,escoordinate3
-      - bootstrap.memory_lock=true
-      - xpack.security.enabled=true
-      - xpack.ingest.geoip.enabled=true      
-      - xpack.security.http.ssl.enabled=true
-      - xpack.security.http.ssl.key=certs/esingest/esingest.key
-      - xpack.security.http.ssl.certificate=certs/esingest/esingest.crt
-      - xpack.security.http.ssl.certificate_authorities=certs/ca/ca.crt
-      - xpack.security.transport.ssl.enabled=true
-      - xpack.security.transport.ssl.key=certs/esingest/esingest.key
-      - xpack.security.transport.ssl.certificate=certs/esingest/esingest.crt
-      - xpack.security.transport.ssl.certificate_authorities=certs/ca/ca.crt
-      - xpack.security.transport.ssl.verification_mode=certificate
-      - xpack.license.self_generated.type=${LICENSE}
-    mem_limit: ${MEM_LIMIT}
-    ulimits:
-      memlock:
-        soft: -1
-        hard: -1
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -s --cacert config/certs/ca/ca.crt https://localhost:9200 | grep -q 'missing authentication credentials'",
-        ]
-      interval: 10s
-      timeout: 10s
-      retries: 120
 
   kibana:
     depends_on:
@@ -404,6 +471,17 @@ services:
         condition: service_healthy
       esdatawarm:
         condition: service_healthy
+      esingest:
+        condition: service_healthy        
+      escoordinate1:
+        condition: service_healthy
+      esdatacontent:
+        condition: service_healthy
+      esremoteclusterclient:
+        condition: service_healthy
+      estransform:
+        condition: service_healthy
+
     image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
     volumes:
       - certs:/usr/share/kibana/config/certs
@@ -430,7 +508,8 @@ services:
 
   esfleet:
     depends_on:
-      - kibana
+      kibana:
+        condition: service_healthy
     image: docker.elastic.co/beats/elastic-agent:${STACK_VERSION}
     volumes:
       - esfleet:/usr/share/elastic-agent/data    
@@ -464,19 +543,21 @@ volumes:
     driver: local
   escoordinate1_logs:
     driver: local
-  escoordinate3_logs:
-    driver: local
-  escoordinate2_logs:
-    driver: local
-  escoordinate2_data:
-    driver: local
-  escoordinate3_data:
-    driver: local
   esingest_data:
     driver: local
   esingest_logs:
     driver: local
   esfleet:
     driver: local
-  ha-proxy_data:
+  esremoteclusterclient_data:
+    driver: local
+  esremoteclusterclient_logs:
+    driver: local
+  estransform_data:
+    driver: local
+  estransform_logs:
+    driver: local
+  esdatacontent_data:
+    driver: local
+  esdatacontent_logs:
     driver: local
