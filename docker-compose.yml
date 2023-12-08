@@ -338,7 +338,7 @@ services:
 
   esingest:
     depends_on:
-      estransform:
+      esdatawarm:
         condition: service_healthy
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
@@ -380,7 +380,7 @@ services:
 
   esremoteclusterclient:
     depends_on:
-      esingest:
+      esdatawarm:
         condition: service_healthy
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
@@ -422,7 +422,7 @@ services:
 
   escoordinate1:
     depends_on:
-      esremoteclusterclient:
+      esdatawarm:
         condition: service_healthy
     image: docker.elastic.co/elasticsearch/elasticsearch:${STACK_VERSION}
     volumes:
@@ -470,18 +470,9 @@ services:
       esdatahot:
         condition: service_healthy
       esdatawarm:
-        condition: service_healthy
-      esingest:
-        condition: service_healthy        
+        condition: service_healthy    
       escoordinate1:
         condition: service_healthy
-      esdatacontent:
-        condition: service_healthy
-      esremoteclusterclient:
-        condition: service_healthy
-      estransform:
-        condition: service_healthy
-
     image: docker.elastic.co/kibana/kibana:${STACK_VERSION}
     volumes:
       - certs:/usr/share/kibana/config/certs
@@ -494,6 +485,7 @@ services:
       - ELASTICSEARCH_HOSTS=https://esmaster:9200
       - ELASTICSEARCH_USERNAME=kibana_system
       - ELASTICSEARCH_PASSWORD=${KIBANA_PASSWORD}
+      - monitoring.ui.ccs.enabled=false
       - ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES=config/certs/ca/ca.crt
     mem_limit: ${MEM_LIMIT}
     healthcheck:
@@ -511,8 +503,11 @@ services:
       kibana:
         condition: service_healthy
     image: docker.elastic.co/beats/elastic-agent:${STACK_VERSION}
+    ports:
+      - 8220:8220
     volumes:
       - esfleet:/usr/share/elastic-agent/data    
+      - certs:/home
     mem_limit: ${MEM_LIMIT}
     ulimits:
       memlock:
